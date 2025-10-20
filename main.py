@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.db.database import create_tables
 from app.presentation.controllers.chat_controller import ChatController
 from app.presentation.controllers.document_controller import DocumentController
+from app.presentation.controllers.auth_controller import AuthController
 
 # FastAPI 앱 생성
 app = FastAPI(
@@ -34,9 +35,11 @@ app.add_middleware(
 # 컨트롤러 등록
 chat_controller = ChatController()
 document_controller = DocumentController()
+auth_controller = AuthController()
 
 app.include_router(chat_controller.router)
 app.include_router(document_controller.router)
+app.include_router(auth_controller.router)
 
 
 @app.get("/")
@@ -71,26 +74,26 @@ async def health_check():
 async def architecture_info():
     """아키텍처 정보"""
     return {
-        "architecture": "Domain-Driven Design (DDD)",
-        "layers": {
-            "domain": {
-                "entities": ["Document", "ChatSession", "ChatMessage", "SearchResult"],
-                "value_objects": ["DocumentChunk", "EmbeddingResult", "PerformanceMetrics"],
-                "repositories": ["DocumentRepository", "ChatSessionRepository", "ChatMessageRepository", "VectorStoreRepository"]
+            "architecture": "Domain-Driven Design (DDD)",
+            "layers": {
+                "domain": {
+                    "entities": ["Document", "ChatSession", "ChatMessage", "SearchResult", "User"],
+                    "value_objects": ["DocumentChunk", "EmbeddingResult", "PerformanceMetrics"],
+                    "repositories": ["DocumentRepository", "ChatSessionRepository", "ChatMessageRepository", "VectorStoreRepository", "UserRepository"]
+                },
+                "application": {
+                    "use_cases": ["DocumentUseCases", "ChatUseCases", "SearchUseCases", "UserUseCases"],
+                    "services": ["DocumentProcessor", "LLMService", "MLflowTracker", "GoogleOAuthService"]
+                },
+                "infrastructure": {
+                    "repositories": ["SqlAlchemyRepositories", "FAISSVectorStoreRepository"],
+                    "services": ["OpenAILLMService", "StandardMLflowTracker"]
+                },
+                "presentation": {
+                    "controllers": ["ChatController", "DocumentController", "AuthController"],
+                    "schemas": ["Request/Response DTOs"]
+                }
             },
-            "application": {
-                "use_cases": ["DocumentUseCases", "ChatUseCases", "SearchUseCases"],
-                "services": ["DocumentProcessor", "LLMService", "MLflowTracker"]
-            },
-            "infrastructure": {
-                "repositories": ["SqlAlchemyRepositories", "FAISSVectorStoreRepository"],
-                "services": ["OpenAILLMService", "StandardMLflowTracker"]
-            },
-            "presentation": {
-                "controllers": ["ChatController", "DocumentController"],
-                "schemas": ["Request/Response DTOs"]
-            }
-        },
         "benefits": [
             "관심사 분리",
             "테스트 용이성",

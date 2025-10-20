@@ -3,6 +3,29 @@ from sqlalchemy.sql import func
 from .database import Base
 
 
+class User(Base):
+    """회원 테이블"""
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    google_id = Column(String(255), unique=True, index=True, nullable=False)
+    email = Column(String(255), unique=True, index=True, nullable=False)
+    name = Column(String(255))
+    given_name = Column(String(255))
+    family_name = Column(String(255))
+    picture = Column(String(500))
+    locale = Column(String(50))
+    verified_email = Column(Boolean, default=False)
+    access_token = Column(Text)
+    last_login_at = Column(DateTime(timezone=True))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    metadata = Column(JSON)
+
+    def __repr__(self):
+        return f"<User(id={self.id}, email='{self.email}')>"
+
+
 class Document(Base):
     """문서 테이블"""
     __tablename__ = "documents"

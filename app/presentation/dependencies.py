@@ -10,16 +10,19 @@ from ..infrastructure.repositories.sqlalchemy_document_repository import SqlAlch
 from ..infrastructure.repositories.sqlalchemy_chat_session_repository import SqlAlchemyChatSessionRepository
 from ..infrastructure.repositories.sqlalchemy_chat_message_repository import SqlAlchemyChatMessageRepository
 from ..infrastructure.repositories.faiss_vector_store_repository import FAISSVectorStoreRepository
+from ..infrastructure.repositories.sqlalchemy_user_repository import SqlAlchemyUserRepository
 
 # Application services
 from ..application.services.document_processor import LangChainDocumentProcessor
 from ..application.services.llm_service import OpenAILLMService
 from ..application.services.mlflow_tracker import StandardMLflowTracker
+from ..application.services.google_oauth import GoogleOAuthService
 
 # Use cases
 from ..application.use_cases.document_use_cases import DocumentUseCases
 from ..application.use_cases.chat_use_cases import ChatUseCases
 from ..application.use_cases.search_use_cases import SearchUseCases
+from ..application.use_cases.user_use_cases import UserUseCases
 
 
 @lru_cache()
@@ -44,6 +47,12 @@ def get_mlflow_tracker():
 
 
 @lru_cache()
+def get_google_oauth_service():
+    """Google OAuth 서비스 의존성"""
+    return GoogleOAuthService()
+
+
+@lru_cache()
 def get_vector_store_repository():
     """벡터 저장소 의존성"""
     return FAISSVectorStoreRepository(
@@ -65,6 +74,11 @@ def get_chat_session_repository(db: Session = Depends(get_db)):
 def get_chat_message_repository(db: Session = Depends(get_db)):
     """채팅 메시지 저장소 의존성"""
     return SqlAlchemyChatMessageRepository(db)
+
+
+def get_user_repository(db: Session = Depends(get_db)):
+    """회원 저장소 의존성"""
+    return SqlAlchemyUserRepository(db)
 
 
 def get_search_use_cases(
@@ -107,4 +121,15 @@ def get_chat_use_cases(
         search_use_cases=search_use_cases,
         llm_service=llm_service,
         mlflow_tracker=mlflow_tracker
+    )
+
+
+def get_user_use_cases(
+    user_repository=Depends(get_user_repository),
+    google_oauth_service=Depends(get_google_oauth_service)
+):
+    """회원 유스케이스 의존성"""
+    return UserUseCases(
+        user_repository=user_repository,
+        google_oauth_service=google_oauth_service
     )

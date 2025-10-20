@@ -25,6 +25,7 @@ pydantic-settings==2.1.0
 
 # Additional utilities
 aiofiles==23.2.0
+httpx==0.24.1
 
 # MLflow for experiment tracking
 mlflow==2.8.1

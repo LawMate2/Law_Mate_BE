@@ -1,8 +1,14 @@
-from pydantic_settings import BaseSettings
-from typing import Optional
+from pydantic import AliasChoices, Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore"
+    )
+
     openai_api_key: str
     faiss_db_path: str = "./data/faiss"
     upload_dir: str = "./data/uploads"
@@ -11,19 +17,38 @@ class Settings(BaseSettings):
     mlflow_tracking_uri: str = "./data/mlruns"
     mlflow_experiment_name: str = "rag-chatbot"
 
-    # MySQL RDS 설정
-    mysql_host: str = "j2p.c70uuq2mcwbq.ap-southeast-2.rds.amazonaws.com"
-    mysql_port: int = 3306
-    mysql_username: str = "admin"
-    mysql_password: str = "inforsion00"
-    mysql_database: str = "rag_chatbot"
+    # MariaDB 설정 (Docker 기본값과 호환)
+    db_driver: str = Field(
+        default="mariadb+pymysql",
+        validation_alias=AliasChoices("DB_DRIVER", "MYSQL_DRIVER"),
+    )
+    db_host: str = Field(
+        default="127.0.0.1",
+        validation_alias=AliasChoices("DB_HOST", "MYSQL_HOST"),
+    )
+    db_port: int = Field(
+        default=3306,
+        validation_alias=AliasChoices("DB_PORT", "MYSQL_PORT"),
+    )
+    db_username: str = Field(
+        default="appuser",
+        validation_alias=AliasChoices("DB_USERNAME", "MYSQL_USERNAME"),
+    )
+    db_password: str = Field(
+        default="apppw",
+        validation_alias=AliasChoices("DB_PASSWORD", "MYSQL_PASSWORD"),
+    )
+    db_database: str = Field(
+        default="appdb",
+        validation_alias=AliasChoices("DB_DATABASE", "MYSQL_DATABASE"),
+    )
 
     @property
     def database_url(self) -> str:
-        return f"mysql+pymysql://{self.mysql_username}:{self.mysql_password}@{self.mysql_host}:{self.mysql_port}/{self.mysql_database}"
-
-    class Config:
-        env_file = ".env"
+        return (
+            f"{self.db_driver}://{self.db_username}:{self.db_password}"
+            f"@{self.db_host}:{self.db_port}/{self.db_database}"
+        )
 
 
 settings = Settings()
