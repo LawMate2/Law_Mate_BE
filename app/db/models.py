@@ -1,9 +1,19 @@
 from sqlalchemy import Column, Integer, String, Text, DateTime, Float, Boolean, JSON
+from sqlalchemy.orm import declared_attr
 from sqlalchemy.sql import func
+
 from .database import Base
 
 
-class User(Base):
+class MetadataMixin:
+    """공통 메타데이터 컬럼 믹스인"""
+
+    @declared_attr
+    def metadata_json(cls):
+        return Column("metadata", JSON)
+
+
+class User(Base, MetadataMixin):
     """회원 테이블"""
     __tablename__ = "users"
 
@@ -20,13 +30,12 @@ class User(Base):
     last_login_at = Column(DateTime(timezone=True))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
-    metadata = Column(JSON)
 
     def __repr__(self):
         return f"<User(id={self.id}, email='{self.email}')>"
 
 
-class Document(Base):
+class Document(Base, MetadataMixin):
     """문서 테이블"""
     __tablename__ = "documents"
 
@@ -39,13 +48,12 @@ class Document(Base):
     chunk_count = Column(Integer, default=0)
     processing_time = Column(Float)
     is_processed = Column(Boolean, default=False)
-    metadata = Column(JSON)
 
     def __repr__(self):
         return f"<Document(id={self.id}, filename='{self.filename}')>"
 
 
-class ChatSession(Base):
+class ChatSession(Base, MetadataMixin):
     """채팅 세션 테이블"""
     __tablename__ = "chat_sessions"
 
@@ -54,13 +62,12 @@ class ChatSession(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     total_messages = Column(Integer, default=0)
-    metadata = Column(JSON)
 
     def __repr__(self):
         return f"<ChatSession(id={self.id}, session_id='{self.session_id}')>"
 
 
-class ChatMessage(Base):
+class ChatMessage(Base, MetadataMixin):
     """채팅 메시지 테이블"""
     __tablename__ = "chat_messages"
 
@@ -81,13 +88,11 @@ class ChatMessage(Base):
     similarity_scores = Column(JSON)  # 유사도 점수들
     retrieved_chunks = Column(Integer)  # 검색된 청크 수
 
-    metadata = Column(JSON)
-
     def __repr__(self):
         return f"<ChatMessage(id={self.id}, role='{self.role}', session_id='{self.session_id}')>"
 
 
-class MLflowRun(Base):
+class MLflowRun(Base, MetadataMixin):
     """MLflow 실행 추적 테이블"""
     __tablename__ = "mlflow_runs"
 
@@ -115,7 +120,7 @@ class MLflowRun(Base):
         return f"<MLflowRun(id={self.id}, run_id='{self.run_id}', status='{self.status}')>"
 
 
-class SystemMetrics(Base):
+class SystemMetrics(Base, MetadataMixin):
     """시스템 메트릭 테이블"""
     __tablename__ = "system_metrics"
 
@@ -136,8 +141,6 @@ class SystemMetrics(Base):
     # 품질 메트릭
     avg_similarity_score = Column(Float)
     success_rate = Column(Float)
-
-    metadata = Column(JSON)
 
     def __repr__(self):
         return f"<SystemMetrics(id={self.id}, timestamp='{self.timestamp}')>"
