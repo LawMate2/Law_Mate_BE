@@ -1,3 +1,5 @@
+from typing import Optional
+
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -17,9 +19,9 @@ class Settings(BaseSettings):
     mlflow_tracking_uri: str = "./data/mlruns"
     mlflow_experiment_name: str = "rag-chatbot"
 
-    # MariaDB 설정 (Docker 기본값과 호환)
+    # MySQL 설정 (Docker 기본값과 호환)
     db_driver: str = Field(
-        default="mariadb+pymysql",
+        default="mysql+pymysql",
         validation_alias=AliasChoices("DB_DRIVER", "MYSQL_DRIVER"),
     )
     db_host: str = Field(
@@ -41,6 +43,24 @@ class Settings(BaseSettings):
     db_database: str = Field(
         default="appdb",
         validation_alias=AliasChoices("DB_DATABASE", "MYSQL_DATABASE"),
+    )
+
+    # Assembly law API
+    assembly_api_key: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("ASSEMBLY_API_KEY", "LAW_API_KEY")
+    )
+    assembly_api_url: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("ASSEMBLY_API_URL", "LAW_API_URL")
+    )
+    assembly_api_query_param: str = Field(
+        default="search",
+        validation_alias=AliasChoices("ASSEMBLY_API_QUERY_PARAM", "LAW_API_QUERY_PARAM")
+    )
+    assembly_api_timeout: float = Field(
+        default=10.0,
+        validation_alias=AliasChoices("ASSEMBLY_API_TIMEOUT", "LAW_API_TIMEOUT")
     )
 
     @property

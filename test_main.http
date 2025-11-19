@@ -9,3 +9,13 @@ GET http://127.0.0.1:8000/hello/User
 Accept: application/json
 
 ###
+
+# Chat with LangGraph + RAG (+ 법령 추천)
+POST http://127.0.0.1:8000/chat
+Content-Type: application/json
+
+{
+  "message": "업무상 재해와 관련된 사내 규정이 뭔가요?",
+  "session_id": null,
+  "conversation_history": []
+}

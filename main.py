@@ -1,10 +1,10 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.auth.presentation.controllers.auth_controller import AuthController
+from app.chat.presentation.controllers.chat_controller import ChatController
 from app.db.database import create_tables
-from app.presentation.controllers.chat_controller import ChatController
-from app.presentation.controllers.document_controller import DocumentController
-from app.presentation.controllers.auth_controller import AuthController
+from app.documents.presentation.controllers.document_controller import DocumentController
 
 # FastAPI 앱 생성
 app = FastAPI(
