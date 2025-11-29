@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import List
 
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import PyPDFLoader, TextLoader
 from langchain_community.document_loaders.word_document import Docx2txtLoader
 
@@ -28,7 +28,7 @@ class LangChainDocumentProcessor(DocumentProcessor):
 
     async def process_document(self, file_path: str) -> List[DocumentChunk]:
         """문서를 처리하여 청크들로 분할"""
-        # 파일 확장자에 따른 로더 선택
+
         if file_path.endswith('.pdf'):
             loader = PyPDFLoader(file_path)
         elif file_path.endswith('.docx'):
@@ -38,23 +38,22 @@ class LangChainDocumentProcessor(DocumentProcessor):
         else:
             raise ValueError(f"지원하지 않는 파일 형식: {file_path}")
 
-        # 문서 로드
         documents = loader.load()
-
-        # 텍스트 분할
         texts = self.text_splitter.split_documents(documents)
 
-        # DocumentChunk 객체들로 변환
         chunks = []
+
         for i, text in enumerate(texts):
             chunk_id = f"{file_path}_{i}"
+
             chunk = DocumentChunk(
                 content=text.page_content,
                 chunk_id=chunk_id,
                 source=file_path,
-                page=getattr(text, 'metadata', {}).get('page', 0),
-                metadata=getattr(text, 'metadata', {})
+                page=text.metadata.get("page", 0),
+                metadata=text.metadata
             )
+
             chunks.append(chunk)
 
         return chunks
