@@ -19,6 +19,11 @@ class Settings(BaseSettings):
     mlflow_tracking_uri: str = "./data/mlruns"
     mlflow_experiment_name: str = "rag-chatbot"
 
+    CLOVA_OCR_API_URL: str = ""
+    CLOVA_OCR_SECRET_KEY: str = ""
+
+
+
     # MySQL 설정 (Docker 기본값과 호환)
     db_driver: str = Field(
         default="mysql+pymysql",
