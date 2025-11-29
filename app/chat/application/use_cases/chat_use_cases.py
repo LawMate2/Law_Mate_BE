@@ -2,17 +2,12 @@ import time
 from dataclasses import asdict, dataclass
 from typing import Any, Dict, List, Optional
 
-from app.chat.application.services.llm_service import LLMService
-from app.chat.application.services.law_information_service import (
-    LawInformationService,
-    LawSearchResult,
-)
+from app.chat.application.services.rag_pipeline import LangGraphRAGPipeline
 from app.chat.domain.entities.chat_message import ChatMessage
 from app.chat.domain.entities.chat_session import ChatSession
 from app.chat.domain.entities.law_reference import LawReference
 from app.chat.domain.repositories.chat_message_repository import ChatMessageRepository
 from app.chat.domain.repositories.chat_session_repository import ChatSessionRepository
-from app.search.application.use_cases.search_use_cases import SearchUseCases
 from app.shared.services.mlflow_tracker import MLflowTracker
 
 
@@ -32,17 +27,13 @@ class ChatUseCases:
         self,
         chat_session_repository: ChatSessionRepository,
         chat_message_repository: ChatMessageRepository,
-        search_use_cases: SearchUseCases,
-        llm_service: LLMService,
+        rag_pipeline: LangGraphRAGPipeline,
         mlflow_tracker: MLflowTracker,
-        law_information_service: LawInformationService
     ):
         self.chat_session_repository = chat_session_repository
         self.chat_message_repository = chat_message_repository
-        self.search_use_cases = search_use_cases
-        self.llm_service = llm_service
+        self.rag_pipeline = rag_pipeline
         self.mlflow_tracker = mlflow_tracker
-        self.law_information_service = law_information_service
 
     async def start_chat_session(self, metadata: Dict[str, Any] = None) -> ChatSession:
         """새로운 채팅 세션 시작"""
@@ -77,47 +68,33 @@ class ChatUseCases:
                 user_msg = ChatMessage.create_user_message(session_id, user_message)
                 await self.chat_message_repository.save(user_msg)
 
-                # 컨텍스트 검색
-                search_start = time.time()
-                search_result = await self.search_use_cases.search_documents(user_message)
-                retrieve_time = time.time() - search_start
-
-                law_search_result: LawSearchResult = await self.law_information_service.search_related_laws(
-                    user_message
-                )
-                combined_context_segments: List[str] = []
-                if search_result.combined_context:
-                    combined_context_segments.append(search_result.combined_context)
-                if law_search_result.context_block:
-                    combined_context_segments.append(law_search_result.context_block)
-                combined_context = "\n\n".join(segment.strip() for segment in combined_context_segments if segment)
-
-                # LLM 응답 생성
-                generate_start = time.time()
-                response = await self.llm_service.generate_response(
+                # LangGraph RAG 파이프라인 실행
+                rag_start = time.time()
+                rag_result = await self.rag_pipeline.arun(
                     query=user_message,
-                    context=combined_context,
                     conversation_history=conversation_history or []
                 )
-                generate_time = time.time() - generate_start
+                rag_elapsed = time.time() - rag_start
+                retrieve_time = rag_result.retrieval_time
+                generate_time = max(rag_elapsed - retrieve_time, 0.0)
 
                 total_time = time.time() - start_time
 
                 # 어시스턴트 메시지 생성 및 저장
                 assistant_msg = ChatMessage.create_assistant_message(
                     session_id=session_id,
-                    content=response,
+                    content=rag_result.response,
                     retrieve_time=retrieve_time,
                     generate_time=generate_time,
                     total_time=total_time,
-                    context_length=len(combined_context),
-                    similarity_scores=search_result.similarity_scores,
-                    retrieved_chunks=search_result.retrieved_chunks
+                    context_length=len(rag_result.combined_context),
+                    similarity_scores=rag_result.similarity_scores,
+                    retrieved_chunks=rag_result.retrieved_chunks
                 )
 
-                if law_search_result.references:
+                if rag_result.law_references:
                     assistant_msg.metadata["related_laws"] = [
-                        asdict(reference) for reference in law_search_result.references
+                        asdict(reference) for reference in rag_result.law_references
                     ]
 
                 await self.chat_message_repository.save(assistant_msg)
@@ -129,20 +106,21 @@ class ChatUseCases:
                 # 메트릭 로깅
                 await self.mlflow_tracker.log_metrics({
                     "retrieve_time": retrieve_time,
+                    "embedding_time": rag_result.embedding_time,
                     "generate_time": generate_time,
                     "total_time": total_time,
-                    "context_length": len(combined_context),
-                    "response_length": len(response),
-                    "max_similarity_score": search_result.max_similarity_score,
-                    "avg_similarity_score": search_result.avg_similarity_score,
-                    "related_law_count": len(law_search_result.references),
+                    "context_length": len(rag_result.combined_context),
+                    "response_length": len(rag_result.response),
+                    "max_similarity_score": max(rag_result.similarity_scores) if rag_result.similarity_scores else 0.0,
+                    "avg_similarity_score": sum(rag_result.similarity_scores) / len(rag_result.similarity_scores) if rag_result.similarity_scores else 0.0,
+                    "related_law_count": len(rag_result.law_references),
                     "success": 1
                 })
 
                 return ChatGenerationResult(
-                    response=response,
-                    related_laws=law_search_result.references,
-                    law_context=law_search_result.context_block
+                    response=rag_result.response,
+                    related_laws=rag_result.law_references,
+                    law_context=rag_result.law_context
                 )
 
             except Exception as e:

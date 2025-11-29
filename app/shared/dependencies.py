@@ -8,6 +8,7 @@ from app.auth.application.use_cases.user_use_cases import UserUseCases
 from app.auth.infrastructure.repositories.sqlalchemy_user_repository import (
     SqlAlchemyUserRepository,
 )
+from app.chat.application.services.rag_pipeline import LangGraphRAGPipeline
 from app.chat.application.services.llm_service import OpenAILLMService
 from app.chat.application.services.law_information_service import (
     AssemblyLawInformationService,
@@ -78,7 +79,9 @@ def get_vector_store_repository():
     """벡터 저장소 의존성"""
     return FAISSVectorStoreRepository(
         faiss_db_path=settings.faiss_db_path,
-        openai_api_key=settings.openai_api_key
+        openai_api_key=settings.openai_api_key,
+        embedding_model="text-embedding-3-small",
+        dimension=1536
     )
 
 
@@ -113,6 +116,19 @@ def get_search_use_cases(
     )
 
 
+def get_rag_pipeline(
+    search_use_cases=Depends(get_search_use_cases),
+    llm_service=Depends(get_llm_service),
+    law_information_service=Depends(get_law_information_service)
+):
+    """LangGraph RAG 파이프라인"""
+    return LangGraphRAGPipeline(
+        search_use_cases=search_use_cases,
+        llm_service=llm_service,
+        law_information_service=law_information_service
+    )
+
+
 def get_document_use_cases(
     document_repository=Depends(get_document_repository),
     vector_store_repository=Depends(get_vector_store_repository),
@@ -131,19 +147,15 @@ def get_document_use_cases(
 def get_chat_use_cases(
     chat_session_repository=Depends(get_chat_session_repository),
     chat_message_repository=Depends(get_chat_message_repository),
-    search_use_cases=Depends(get_search_use_cases),
-    llm_service=Depends(get_llm_service),
+    rag_pipeline=Depends(get_rag_pipeline),
     mlflow_tracker=Depends(get_mlflow_tracker),
-    law_information_service=Depends(get_law_information_service)
 ):
     """채팅 유스케이스 의존성"""
     return ChatUseCases(
         chat_session_repository=chat_session_repository,
         chat_message_repository=chat_message_repository,
-        search_use_cases=search_use_cases,
-        llm_service=llm_service,
+        rag_pipeline=rag_pipeline,
         mlflow_tracker=mlflow_tracker,
-        law_information_service=law_information_service
     )
 
 

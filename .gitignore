@@ -145,6 +145,10 @@ data/faiss/*
 data/mlruns/
 data/chromadb/
 
+# Docker volumes and data
+docker/docker-data/mysql/
+docker/docker-data/
+
 # Logs
 *.log
 logs/
