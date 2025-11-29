@@ -5,8 +5,9 @@ FastAPI-based retrieval-augmented generation (RAG) service implemented with a Do
 ## Key Capabilities
 
 - Clean separation of presentation, application, domain, and infrastructure layers.
-- Document ingestion pipeline using LangChain loaders and chunking, FAISS vector storage, and OpenAI embeddings.
-- Retrieval-augmented chat interactions backed by OpenAI ChatGPT and persistent session history.
+- Document ingestion pipeline using LangChain loaders and chunking, FAISS vector storage, and Claude embeddings (Anthropic).
+- LangGraph-powered retrieval-augmented chat orchestration with persistent session history.
+- Retrieval-augmented chat interactions backed by OpenAI ChatGPT (response) + Claude embeddings (retrieval).
 - Google OAuth login flow with SQLAlchemy persistence for user profiles.
 - MLflow tracking of document processing and chat metrics for experiment management.
 - Korean Parliamentary Law portal integration that surfaces related legislation for each chat query.
@@ -15,7 +16,7 @@ FastAPI-based retrieval-augmented generation (RAG) service implemented with a Do
 
 - FastAPI, Pydantic, and Uvicorn
 - SQLAlchemy ORM with MySQL (Docker) backend
-- LangChain, FAISS, and OpenAI APIs
+- LangGraph, LangChain, FAISS, Anthropic Claude embeddings, and OpenAI Chat API
 - MLflow for experiment tracking
 - httpx for Google OAuth user infoY
 - Python 3.11
@@ -60,7 +61,8 @@ FastAPI-based retrieval-augmented generation (RAG) service implemented with a Do
 
 - Python 3.11 and `pip`
 - Docker 20+ with Docker Compose v2
-- An OpenAI API key with access to `gpt-3.5-turbo` and `text-embedding-ada-002`
+- An Anthropic API key with access to `text-embedding-001` (used for FAISS ingestion and retrieval)
+- An OpenAI API key with access to `gpt-3.5-turbo` (used for generation)
 - Optional: MLflow CLI for inspecting runs (`pip install mlflow`)
 
 ## Environment Configuration
@@ -69,7 +71,10 @@ Create a `.env` file at the repository root with the variables below (defaults c
 
 | Key | Default | Description |
 | --- | --- | --- |
-| `OPENAI_API_KEY` | (required) | OpenAI API key used for embeddings and chat completions |
+| `OPENAI_API_KEY` | (required) | OpenAI API key used for chat completions |
+| `ANTHROPIC_API_KEY` | (required) | Anthropic API key used for all document/query embeddings |
+| `CLAUDE_EMBEDDING_MODEL` | `text-embedding-001` | Embedding model passed to Anthropic |
+| `CLAUDE_EMBEDDING_DIMENSION` | `1536` | Expected embedding vector dimension for the FAISS index |
 | `FAISS_DB_PATH` | `./data/faiss` | Directory where the FAISS index and metadata are persisted |
 | `UPLOAD_DIR` | `./data/uploads` | Directory for storing original uploaded documents |
 | `MLFLOW_TRACKING_URI` | `./data/mlruns` | Path or URI for MLflow tracking storage |
@@ -188,6 +193,7 @@ The `test_main.http` file contains ready-to-run HTTP requests for VS Code or the
 ## Troubleshooting
 
 - **Database connection errors**: confirm the MySQL container is running and the `.env` connection variables match the Compose service.
+- **Qwen embedding failures**: verify `QWEN_API_KEY`/`QWEN_EMBEDDING_MODEL` are set and that the DashScope endpoint is reachable from the host.
 - **OpenAI API failures**: verify `OPENAI_API_KEY` is set and the host can reach the OpenAI API. Rate limits are logged under `data/mlruns`.
 - **FAISS index missing**: the server initialises the index on first run. Ensure the process has write access to `data/faiss`.
 

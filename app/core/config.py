@@ -12,6 +12,18 @@ class Settings(BaseSettings):
     )
 
     openai_api_key: str
+    anthropic_api_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("ANTHROPIC_API_KEY", "CLAUDE_API_KEY")
+    )
+    claude_embedding_model: str = Field(
+        default="text-embedding-001",
+        validation_alias=AliasChoices("CLAUDE_EMBEDDING_MODEL", "ANTHROPIC_EMBEDDING_MODEL")
+    )
+    claude_embedding_dimension: int = Field(
+        default=1536,
+        validation_alias=AliasChoices("CLAUDE_EMBEDDING_DIMENSION", "ANTHROPIC_EMBEDDING_DIMENSION")
+    )
     faiss_db_path: str = "./data/faiss"
     upload_dir: str = "./data/uploads"
 
@@ -61,6 +73,17 @@ class Settings(BaseSettings):
     assembly_api_timeout: float = Field(
         default=10.0,
         validation_alias=AliasChoices("ASSEMBLY_API_TIMEOUT", "LAW_API_TIMEOUT")
+    )
+
+    # CORS 설정
+    cors_origins: list[str] = Field(
+        default=[
+            "http://localhost:5173",  # Vite 기본 포트
+            "http://localhost:3000",  # React 기본 포트
+            "http://127.0.0.1:5173",
+            "http://127.0.0.1:3000",
+        ],
+        validation_alias=AliasChoices("CORS_ORIGINS", "ALLOWED_ORIGINS")
     )
 
     @property

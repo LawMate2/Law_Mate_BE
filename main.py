@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.auth.presentation.controllers.auth_controller import AuthController
 from app.chat.presentation.controllers.chat_controller import ChatController
+from app.core.config import settings
 from app.db.database import create_tables
 from app.documents.presentation.controllers.document_controller import DocumentController
 
@@ -23,10 +24,10 @@ async def startup_event():
     except Exception as e:
         print(f"❌ 데이터베이스 테이블 생성 중 오류 발생: {e}")
 
-# CORS 설정
+# CORS 설정 (React + Vite 연동)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 프로덕션에서는 특정 도메인으로 제한
+    allow_origins=settings.cors_origins,  # .env에서 CORS_ORIGINS로 설정 가능
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -1,11 +1,12 @@
+import asyncio
 import json
 import os
 import time
-from typing import List
+from typing import List, Optional
 
 import faiss
 import numpy as np
-from openai import OpenAI
+from openai import AsyncOpenAI
 
 from app.documents.domain.value_objects.document_chunk import DocumentChunk
 from app.search.domain.entities.search_result import SearchResult
@@ -16,9 +17,16 @@ from app.search.domain.value_objects.embedding_result import EmbeddingResult
 class FAISSVectorStoreRepository(VectorStoreRepository):
     """FAISS를 사용한 벡터 저장소 구현"""
 
-    def __init__(self, faiss_db_path: str, openai_api_key: str, dimension: int = 1536):
+    def __init__(
+        self,
+        faiss_db_path: str,
+        openai_api_key: str,
+        embedding_model: str = "text-embedding-3-small",
+        dimension: int = 1536
+    ):
         self.faiss_db_path = faiss_db_path
-        self.openai_client = OpenAI(api_key=openai_api_key)
+        self.openai_client = AsyncOpenAI(api_key=openai_api_key)
+        self.embedding_model = embedding_model
         self.dimension = dimension
 
         self.index_path = os.path.join(faiss_db_path, "faiss_index.bin")
@@ -66,22 +74,27 @@ class FAISSVectorStoreRepository(VectorStoreRepository):
         """텍스트 임베딩 생성"""
         start_time = time.time()
 
-        response = self.openai_client.embeddings.create(
-            model="text-embedding-ada-002",
-            input=text
-        )
+        try:
+            response = await self.openai_client.embeddings.create(
+                model=self.embedding_model,
+                input=text,
+            )
+            embedding_payload: Optional[list] = response.data[0].embedding
+            if not embedding_payload:
+                raise ValueError("임베딩 응답이 비어 있습니다.")
 
-        embedding = np.array(response.data[0].embedding, dtype=np.float32)
-        # 코사인 유사도를 위해 벡터 정규화
-        embedding = embedding / np.linalg.norm(embedding)
+            embedding = np.array(embedding_payload, dtype=np.float32)
+            embedding = embedding / np.linalg.norm(embedding)
 
-        generation_time = time.time() - start_time
+            generation_time = time.time() - start_time
 
-        return EmbeddingResult(
-            embedding=embedding.tolist(),
-            text=text,
-            generation_time=generation_time
-        )
+            return EmbeddingResult(
+                embedding=embedding.tolist(),
+                text=text,
+                generation_time=generation_time
+            )
+        except Exception as exc:
+            raise RuntimeError(f"OpenAI 임베딩 생성 중 오류가 발생했습니다: {exc}") from exc
 
     async def add_documents(self, chunks: List[DocumentChunk]) -> bool:
         """문서 청크들을 벡터 저장소에 추가"""
