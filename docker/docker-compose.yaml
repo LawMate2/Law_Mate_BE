@@ -1,7 +1,7 @@
 services:
   mysql:
     image: mysql:8.0
-    container_name: mysql-local
+    container_name: lawmate_mysql
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: rootpw
@@ -23,7 +23,7 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile
-    container_name: fastapi-app
+    container_name: lawmate_app
     restart: unless-stopped
     depends_on:
       mysql:
