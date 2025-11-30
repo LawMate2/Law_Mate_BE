@@ -7,6 +7,8 @@ from app.core.config import settings
 from app.db.database import create_tables
 from app.documents.presentation.controllers.document_controller import DocumentController
 
+from app.ocr.presentation.controllers.ocr_controller import OCRController # [추가]
+
 # FastAPI 앱 생성
 app = FastAPI(
     title="DDD RAG Chatbot API",
@@ -37,10 +39,12 @@ app.add_middleware(
 chat_controller = ChatController()
 document_controller = DocumentController()
 auth_controller = AuthController()
+ocr_controller = OCRController() # [추가]
 
 app.include_router(chat_controller.router)
 app.include_router(document_controller.router)
 app.include_router(auth_controller.router)
+app.include_router(ocr_controller.router) # [추가]
 
 
 @app.get("/")
