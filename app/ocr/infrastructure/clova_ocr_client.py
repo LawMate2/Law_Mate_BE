@@ -14,7 +14,7 @@ class ClovaOCRClient(OCRClient):
 
     async def extract_text(self, file: UploadFile) -> str:
         if not self.api_url or not self.secret_key:
-            raise HTTPException(status_code=500, detail="OCR(image and dummy_code) 설정이 누락되었습니다.")
+            raise HTTPException(status_code=500, detail="OCR 설정이 누락되었습니다.")
 
         content = await file.read()
         file_ext = file.filename.split('.')[-1].lower()
@@ -32,7 +32,7 @@ class ClovaOCRClient(OCRClient):
 
         files = {'file': (file.filename, content, file.content_type)}
         data = {'message': json.dumps(request_json)}
-        headers = {'X-OCR(image and dummy_code)-SECRET': self.secret_key}
+        headers = {'X-OCR-SECRET': self.secret_key}
 
         async with httpx.AsyncClient() as client:
             try:
@@ -43,8 +43,8 @@ class ClovaOCRClient(OCRClient):
                 result = response.json()
                 return self._parse_response(result)
             except Exception as e:
-                print(f"❌ OCR(image and dummy_code) 요청 실패: {e}")
-                raise HTTPException(status_code=502, detail="OCR(image and dummy_code) 처리 실패")
+                print(f"❌ OCR 요청 실패: {e}")
+                raise HTTPException(status_code=502, detail="OCR 처리 실패")
             finally:
                 await file.seek(0)
 

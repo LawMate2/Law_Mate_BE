@@ -5,7 +5,7 @@ from app.ocr.presentation.schemas.ocr_schemas import OCRResponse
 
 class OCRController:
     def __init__(self):
-        self.router = APIRouter(prefix="/ocr", tags=["OCR(image and dummy_code)"])
+        self.router = APIRouter(prefix="/ocr", tags=["OCR"])
         self.ocr_service = OCRService()
         self._register_routes()
 
