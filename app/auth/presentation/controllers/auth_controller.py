@@ -5,10 +5,16 @@ from app.auth.application.services.google_oauth import GoogleOAuthError
 from app.auth.application.use_cases.user_use_cases import UserUseCases
 from app.auth.domain.entities.user import User
 from app.auth.presentation.schemas.auth_schemas import (
+    DevLoginRequest,
+    DevLoginResponse,
+    DevSignupRequest,
     GoogleLoginRequest,
     GoogleLoginResponse,
+    RefreshTokenRequest,
+    RefreshTokenResponse,
     UserSchema,
 )
+from app.core.config import settings
 from app.shared.dependencies import get_user_use_cases
 
 
@@ -22,22 +28,85 @@ class AuthController:
     def _register_routes(self):
         """라우트 등록"""
 
+        @self.router.post("/dev/signup", response_model=DevLoginResponse)
+        async def dev_signup(
+            request: DevSignupRequest,
+            user_use_cases: UserUseCases = Depends(get_user_use_cases)
+        ):
+            """개발용 회원가입 + 토큰 발급 (access + refresh)"""
+            if settings.environment not in ["development", "dev", "local"]:
+                raise HTTPException(
+                    status_code=403,
+                    detail="개발용 회원가입은 개발 환경에서만 사용 가능합니다."
+                )
+
+            try:
+                user, is_new, tokens = await user_use_cases.dev_signup(request.email, request.name)
+                return DevLoginResponse(
+                    user=self._to_user_schema(user),
+                    access_token=tokens.access_token,
+                    refresh_token=tokens.refresh_token,
+                    is_new_user=is_new
+                )
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"개발 회원가입 처리 중 오류: {str(e)}")
+
+        @self.router.post("/dev/login", response_model=DevLoginResponse)
+        async def dev_login(
+            request: DevLoginRequest,
+            user_use_cases: UserUseCases = Depends(get_user_use_cases)
+        ):
+            """개발용 로그인 (이메일 기반, 개발 환경에서만 사용)"""
+            if settings.environment not in ["development", "dev", "local"]:
+                raise HTTPException(
+                    status_code=403,
+                    detail="개발용 로그인은 개발 환경에서만 사용 가능합니다."
+                )
+
+            try:
+                user, is_new, tokens = await user_use_cases.dev_login(request.email, request.name)
+                return DevLoginResponse(
+                    user=self._to_user_schema(user),
+                    access_token=tokens.access_token,
+                    refresh_token=tokens.refresh_token,
+                    is_new_user=is_new
+                )
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"개발 로그인 처리 중 오류: {str(e)}")
+
         @self.router.post("/google", response_model=GoogleLoginResponse)
         async def google_login(
             request: GoogleLoginRequest,
             user_use_cases: UserUseCases = Depends(get_user_use_cases)
         ):
+            """Google OAuth 로그인 (Authorization Code Flow)"""
             try:
-                user, is_new = await user_use_cases.login_with_google(request.access_token)
+                user, is_new, tokens = await user_use_cases.login_with_google(request.code)
                 return GoogleLoginResponse(
                     user=self._to_user_schema(user),
-                    access_token=request.access_token,
+                    access_token=tokens.access_token,
+                    refresh_token=tokens.refresh_token,
                     is_new_user=is_new
                 )
             except GoogleOAuthError as e:
                 raise HTTPException(status_code=401, detail=str(e))
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Google 로그인 처리 중 오류: {str(e)}")
+
+        @self.router.post("/dev/refresh", response_model=RefreshTokenResponse)
+        async def refresh_tokens(
+            request: RefreshTokenRequest,
+            user_use_cases: UserUseCases = Depends(get_user_use_cases)
+        ):
+            """리프레시 토큰으로 액세스/리프레시 재발급"""
+            try:
+                tokens = await user_use_cases.refresh_tokens(request.refresh_token)
+                return RefreshTokenResponse(
+                    access_token=tokens.access_token,
+                    refresh_token=tokens.refresh_token
+                )
+            except Exception as e:
+                raise HTTPException(status_code=401, detail=f"리프레시 토큰 오류: {str(e)}")
 
         @self.router.get("/users/{user_id}", response_model=UserSchema)
         async def get_user(

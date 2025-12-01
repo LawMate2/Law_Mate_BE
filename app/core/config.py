@@ -24,6 +24,26 @@ class Settings(BaseSettings):
         default=1536,
         validation_alias=AliasChoices("CLAUDE_EMBEDDING_DIMENSION", "ANTHROPIC_EMBEDDING_DIMENSION")
     )
+    redis_host: str = Field(
+        default="redis",
+        validation_alias=AliasChoices("REDIS_HOST")
+    )
+    redis_port: int = Field(
+        default=6379,
+        validation_alias=AliasChoices("REDIS_PORT")
+    )
+    redis_db: int = Field(
+        default=0,
+        validation_alias=AliasChoices("REDIS_DB")
+    )
+    access_token_ttl_seconds: int = Field(
+        default=60 * 30,
+        validation_alias=AliasChoices("ACCESS_TOKEN_TTL", "ACCESS_TOKEN_TTL_SECONDS")
+    )
+    refresh_token_ttl_seconds: int = Field(
+        default=60 * 60 * 24 * 7,
+        validation_alias=AliasChoices("REFRESH_TOKEN_TTL", "REFRESH_TOKEN_TTL_SECONDS")
+    )
     faiss_db_path: str = "./data/faiss"
     upload_dir: str = "./data/uploads"
 
@@ -34,7 +54,19 @@ class Settings(BaseSettings):
     CLOVA_OCR_API_URL: str = ""
     CLOVA_OCR_SECRET_KEY: str = ""
 
-
+    # Google OAuth 설정
+    google_client_id: str = Field(
+        default="",
+        validation_alias=AliasChoices("AUTH_CLIENT_ID", "GOOGLE_CLIENT_ID")
+    )
+    google_client_secret: str = Field(
+        default="",
+        validation_alias=AliasChoices("AUTH_CLIENT_PASSWORD", "GOOGLE_CLIENT_SECRET")
+    )
+    google_redirect_uri: str = Field(
+        default="http://localhost:3000/auth/google/callback",
+        validation_alias=AliasChoices("AUTH_CLIENT_URI", "GOOGLE_REDIRECT_URI")
+    )
 
     # MySQL 설정 (Docker 기본값과 호환)
     db_driver: str = Field(
@@ -89,6 +121,30 @@ class Settings(BaseSettings):
             "http://127.0.0.1:3000",
         ],
         validation_alias=AliasChoices("CORS_ORIGINS", "ALLOWED_ORIGINS")
+    )
+
+    # 환경 설정
+    environment: str = Field(
+        default="development",
+        validation_alias=AliasChoices("ENVIRONMENT", "ENV")
+    )
+
+    # Elasticsearch 설정
+    elasticsearch_host: str = Field(
+        default="127.0.0.1",
+        validation_alias=AliasChoices("ELASTICSEARCH_HOST", "ES_HOST")
+    )
+    elasticsearch_port: int = Field(
+        default=9200,
+        validation_alias=AliasChoices("ELASTICSEARCH_PORT", "ES_PORT")
+    )
+    elasticsearch_index: str = Field(
+        default="lawmate_documents",
+        validation_alias=AliasChoices("ELASTICSEARCH_INDEX", "ES_INDEX")
+    )
+    use_elasticsearch: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("USE_ELASTICSEARCH", "USE_ES")
     )
 
     @property
