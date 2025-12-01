@@ -38,18 +38,20 @@ class OCRController:
             OCR로 추출된 텍스트를 AI로 분석하여 주의사항을 제공합니다.
             """
             try:
-                result = await ocr_service.analyze_text(request.text)
+                result = await ocr_service.analyze_text(request.text, questions=request.questions)
 
                 # KeyPoint 객체로 변환
                 key_points = [
                     KeyPoint(**kp) for kp in result.get("key_points", [])
                 ]
+                qa_items = result.get("qa", []) or []
 
                 return OCRAnalysisResponse(
                     summary=result.get("summary", ""),
                     document_type=result.get("document_type", ""),
                     key_points=key_points,
-                    recommendations=result.get("recommendations", [])
+                    recommendations=result.get("recommendations", []),
+                    qa=qa_items
                 )
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"텍스트 분석 중 오류: {str(e)}")

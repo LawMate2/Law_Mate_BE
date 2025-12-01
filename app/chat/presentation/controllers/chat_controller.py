@@ -12,8 +12,24 @@ from app.chat.presentation.schemas.chat_schemas import (
     ChatHistoryResponse,
     LawReferenceSchema,
 )
+from pydantic import BaseModel
+from typing import List, Literal, Optional
 from app.db.database import get_db
 from app.shared.dependencies import get_chat_use_cases
+
+
+class MCPAnalysisRequest(BaseModel):
+    """MCP 작업을 위한 AI 분석 요청"""
+    task_type: Literal["gmail", "calendar", "drive"]
+    conversation_messages: List[ChatMessageSchema]
+
+
+class MCPAnalysisResponse(BaseModel):
+    """MCP 작업을 위한 AI 분석 응답"""
+    task_type: str
+    extracted_data: dict
+    confidence: str  # "high", "medium", "low"
+    suggestions: Optional[str] = None
 
 
 class ChatController:
@@ -217,3 +233,129 @@ class ChatController:
                         await websocket.send_json({"event": "error", "detail": str(exc)})
             except WebSocketDisconnect:
                 return
+
+        @self.router.post("/analyze-for-mcp", response_model=MCPAnalysisResponse)
+        async def analyze_conversation_for_mcp(
+            request: MCPAnalysisRequest,
+            chat_use_cases: ChatUseCases = Depends(get_chat_use_cases)
+        ):
+            """대화 내용을 AI로 분석하여 MCP 작업에 필요한 정보 추출"""
+            try:
+                # 대화 내용을 텍스트로 변환
+                conversation_text = "\n".join([
+                    f"{msg.role}: {msg.content}"
+                    for msg in request.conversation_messages[-5:]  # 최근 5개 메시지만 사용
+                ])
+
+                # 작업 타입별 프롬프트 생성
+                prompts = {
+                    "gmail": f"""다음 대화 내용을 분석하여 이메일 작성에 필요한 정보를 JSON 형식으로 추출해주세요.
+
+대화 내용:
+{conversation_text}
+
+다음 정보를 추출해주세요:
+1. recipient (받는 사람 이메일 주소)
+2. subject (이메일 제목)
+3. body (이메일 본문 - 전문적이고 예의바른 형식으로)
+
+JSON 형식으로만 응답해주세요. 예시:
+{{"recipient": "example@email.com", "subject": "계약서 검토 요청", "body": "안녕하세요,\\n\\n계약서 검토를 요청드립니다...\\n\\n감사합니다."}}""",
+
+                    "calendar": f"""다음 대화 내용을 분석하여 일정 등록에 필요한 정보를 JSON 형식으로 추출해주세요.
+
+대화 내용:
+{conversation_text}
+
+다음 정보를 추출해주세요:
+1. eventTitle (일정 제목)
+2. eventDate (시작 일시, ISO 8601 형식: YYYY-MM-DDTHH:mm)
+3. eventEnd (종료 일시, ISO 8601 형식, 없으면 시작시간 +1시간)
+4. eventDescription (일정 설명)
+
+JSON 형식으로만 응답해주세요. 날짜가 명확하지 않으면 오늘 날짜를 기준으로 해주세요. 예시:
+{{"eventTitle": "계약서 검토 미팅", "eventDate": "2024-12-03T14:00", "eventEnd": "2024-12-03T15:00", "eventDescription": "계약서 검토 및 논의"}}""",
+
+                    "drive": f"""다음 대화 내용을 분석하여 파일 업로드에 필요한 정보를 JSON 형식으로 추출해주세요.
+
+대화 내용:
+{conversation_text}
+
+다음 정보를 추출해주세요:
+1. contractName (파일/계약서 이름)
+2. folderName (저장할 폴더명, 기본값: "Contracts")
+
+JSON 형식으로만 응답해주세요. 예시:
+{{"contractName": "2024년 서비스 계약서", "folderName": "Contracts"}}"""
+                }
+
+                # AI를 사용하여 정보 추출
+                analysis_query = prompts[request.task_type]
+                conversation_history = [
+                    {"role": msg.role, "content": msg.content}
+                    for msg in request.conversation_messages[:-5]  # 이전 대화는 컨텍스트로
+                ]
+
+                result = await chat_use_cases.send_message(
+                    session_id=None,
+                    user_message=analysis_query,
+                    conversation_history=conversation_history
+                )
+
+                # JSON 추출 시도
+                response_text = result.response
+                extracted_data = {}
+                confidence = "low"
+                suggestions = None
+
+                try:
+                    # JSON 블록 찾기
+                    import json
+                    import re
+
+                    # ```json ... ``` 또는 { ... } 패턴 찾기
+                    json_match = re.search(r'```json\s*(.*?)\s*```', response_text, re.DOTALL)
+                    if json_match:
+                        json_str = json_match.group(1)
+                    else:
+                        # 직접 JSON 찾기
+                        json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+                        if json_match:
+                            json_str = json_match.group(0)
+                        else:
+                            json_str = response_text
+
+                    extracted_data = json.loads(json_str)
+
+                    # 신뢰도 평가
+                    required_fields = {
+                        "gmail": ["recipient", "subject", "body"],
+                        "calendar": ["eventTitle", "eventDate"],
+                        "drive": ["contractName"]
+                    }
+
+                    required = required_fields[request.task_type]
+                    if all(field in extracted_data and extracted_data[field] for field in required):
+                        confidence = "high"
+                    elif any(field in extracted_data and extracted_data[field] for field in required):
+                        confidence = "medium"
+                        suggestions = f"일부 필수 정보가 누락되었습니다. {', '.join(required)} 정보를 확인해주세요."
+                    else:
+                        confidence = "low"
+                        suggestions = "대화에서 충분한 정보를 찾을 수 없습니다. 추가 정보를 입력해주세요."
+
+                except (json.JSONDecodeError, AttributeError) as e:
+                    # JSON 파싱 실패 시 기본값 반환
+                    extracted_data = {}
+                    confidence = "low"
+                    suggestions = "AI가 정보를 추출하지 못했습니다. 수동으로 입력해주세요."
+
+                return MCPAnalysisResponse(
+                    task_type=request.task_type,
+                    extracted_data=extracted_data,
+                    confidence=confidence,
+                    suggestions=suggestions
+                )
+
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"MCP 분석 중 오류: {str(e)}")

@@ -9,7 +9,10 @@ from app.auth.infrastructure.repositories.sqlalchemy_user_repository import (
     SqlAlchemyUserRepository,
 )
 from app.chat.application.services.rag_pipeline import LangGraphRAGPipeline
-from app.chat.application.services.llm_service import OpenAILLMService
+from app.chat.application.services.llm_service import (
+    OpenAILLMService,
+    ToolCallingLLMService,
+)
 from app.chat.application.services.law_information_service import (
     AssemblyLawInformationService,
 )
@@ -42,6 +45,7 @@ from app.ocr.application.ocr_service import OCRService
 from app.ocr.application.text_analysis_service import TextAnalysisService
 from app.chat.application.services.chat_cache_service import ChatCacheService
 from redis.asyncio import Redis
+from app.shared.services.mcp_client import MCPClient
 
 
 @lru_cache()
@@ -53,7 +57,21 @@ def get_document_processor():
 @lru_cache()
 def get_llm_service():
     """LLM 서비스 의존성"""
+    if settings.enable_mcp_tools:
+        return ToolCallingLLMService(
+            api_key=settings.openai_api_key,
+            mcp_client=get_mcp_client(),
+        )
     return OpenAILLMService(api_key=settings.openai_api_key)
+
+
+@lru_cache()
+def get_mcp_client():
+    """MCP 클라이언트 의존성"""
+    return MCPClient(
+        server_cmd=settings.mcp_server_cmd,
+        workdir=settings.mcp_server_cwd,
+    )
 
 
 @lru_cache()
