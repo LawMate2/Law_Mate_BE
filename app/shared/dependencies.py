@@ -107,32 +107,6 @@ def get_token_service():
     )
 
 
-def get_text_analysis_service(
-    search_use_cases=Depends(get_search_use_cases)
-):
-    """텍스트 분석 서비스 의존성 (지식베이스 연동)"""
-    return TextAnalysisService(
-        api_key=settings.openai_api_key,
-        search_use_cases=search_use_cases
-    )
-
-
-def get_ocr_service(
-    text_analysis_service=Depends(get_text_analysis_service)
-):
-    """OCR 서비스 의존성"""
-    return OCRService(text_analysis_service=text_analysis_service)
-
-
-@lru_cache()
-def get_chat_cache_service():
-    """채팅 캐시 서비스 의존성"""
-    return ChatCacheService(
-        redis_client=get_redis_client(),
-        cache_ttl=3600  # 1시간 캐시
-    )
-
-
 @lru_cache()
 def get_vector_store_repository():
     """벡터 저장소 의존성 (FAISS - 기본)"""
@@ -160,6 +134,43 @@ def get_elasticsearch_repository():
     )
 
 
+def get_search_use_cases(
+    vector_store_repository=Depends(get_vector_store_repository),
+    mlflow_tracker=Depends(get_mlflow_tracker)
+):
+    """검색 유스케이스 의존성"""
+    return SearchUseCases(
+        vector_store_repository=vector_store_repository,
+        mlflow_tracker=mlflow_tracker
+    )
+
+
+def get_text_analysis_service(
+    search_use_cases=Depends(get_search_use_cases)
+):
+    """텍스트 분석 서비스 의존성 (지식베이스 연동)"""
+    return TextAnalysisService(
+        api_key=settings.openai_api_key,
+        search_use_cases=search_use_cases
+    )
+
+
+def get_ocr_service(
+    text_analysis_service=Depends(get_text_analysis_service)
+):
+    """OCR 서비스 의존성"""
+    return OCRService(text_analysis_service=text_analysis_service)
+
+
+@lru_cache()
+def get_chat_cache_service():
+    """채팅 캐시 서비스 의존성"""
+    return ChatCacheService(
+        redis_client=get_redis_client(),
+        cache_ttl=3600  # 1시간 캐시
+    )
+
+
 def get_document_repository(db: Session = Depends(get_db)):
     """문서 저장소 의존성"""
     return SqlAlchemyDocumentRepository(db)
@@ -178,17 +189,6 @@ def get_chat_message_repository(db: Session = Depends(get_db)):
 def get_user_repository(db: Session = Depends(get_db)):
     """회원 저장소 의존성"""
     return SqlAlchemyUserRepository(db)
-
-
-def get_search_use_cases(
-    vector_store_repository=Depends(get_vector_store_repository),
-    mlflow_tracker=Depends(get_mlflow_tracker)
-):
-    """검색 유스케이스 의존성"""
-    return SearchUseCases(
-        vector_store_repository=vector_store_repository,
-        mlflow_tracker=mlflow_tracker
-    )
 
 
 def get_rag_pipeline(
