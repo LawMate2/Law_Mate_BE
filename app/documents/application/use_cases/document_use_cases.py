@@ -17,10 +17,12 @@ class DocumentUseCases:
         document_repository: DocumentRepository,
         vector_store_repository: VectorStoreRepository,
         document_processor: DocumentProcessor,
-        mlflow_tracker: MLflowTracker
+        mlflow_tracker: MLflowTracker,
+        elasticsearch_repository: Optional[VectorStoreRepository] = None
     ):
         self.document_repository = document_repository
         self.vector_store_repository = vector_store_repository
+        self.elasticsearch_repository = elasticsearch_repository
         self.document_processor = document_processor
         self.mlflow_tracker = mlflow_tracker
 
@@ -67,8 +69,18 @@ class DocumentUseCases:
                 # 문서 처리
                 chunks = await self.document_processor.process_document(file_path)
 
-                # 벡터 저장소에 추가
+                # FAISS 벡터 저장소에 추가
                 success = await self.vector_store_repository.add_documents(chunks)
+
+                # Elasticsearch에도 추가 (활성화된 경우)
+                es_success = True
+                if self.elasticsearch_repository:
+                    try:
+                        es_success = await self.elasticsearch_repository.add_documents(chunks)
+                        await self.mlflow_tracker.log_metric("elasticsearch_success", 1 if es_success else 0)
+                    except Exception as e:
+                        print(f"Elasticsearch 저장 중 오류 (계속 진행): {e}")
+                        await self.mlflow_tracker.log_text(f"Elasticsearch 오류: {e}", "elasticsearch_error.txt")
 
                 if success:
                     processing_time = time.time() - start_time

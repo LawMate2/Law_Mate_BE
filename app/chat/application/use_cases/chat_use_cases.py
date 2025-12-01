@@ -3,6 +3,7 @@ from dataclasses import asdict, dataclass
 from typing import Any, Dict, List, Optional
 
 from app.chat.application.services.rag_pipeline import LangGraphRAGPipeline
+from app.chat.application.services.chat_cache_service import ChatCacheService
 from app.chat.domain.entities.chat_message import ChatMessage
 from app.chat.domain.entities.chat_session import ChatSession
 from app.chat.domain.entities.law_reference import LawReference
@@ -20,6 +21,13 @@ class ChatGenerationResult:
     law_context: str = ""
 
 
+@dataclass
+class UserChatHistory:
+    """사용자 채팅 히스토리"""
+    sessions: List[ChatSession]
+    messages_by_session: Dict[str, List[ChatMessage]]
+
+
 class ChatUseCases:
     """채팅 관련 유스케이스"""
 
@@ -29,11 +37,13 @@ class ChatUseCases:
         chat_message_repository: ChatMessageRepository,
         rag_pipeline: LangGraphRAGPipeline,
         mlflow_tracker: MLflowTracker,
+        chat_cache_service: ChatCacheService = None,
     ):
         self.chat_session_repository = chat_session_repository
         self.chat_message_repository = chat_message_repository
         self.rag_pipeline = rag_pipeline
         self.mlflow_tracker = mlflow_tracker
+        self.chat_cache_service = chat_cache_service
 
     async def start_chat_session(self, metadata: Dict[str, Any] = None) -> ChatSession:
         """새로운 채팅 세션 시작"""
@@ -152,6 +162,85 @@ class ChatUseCases:
             return False
 
         return await self.chat_session_repository.delete(session.id)
+
+    async def get_user_chat_history(
+        self,
+        user_id: int,
+        skip: int = 0,
+        limit: int = 100
+    ) -> UserChatHistory:
+        """
+        사용자 채팅 히스토리 조회 (Redis 캐시 활용)
+
+        Args:
+            user_id: 사용자 ID
+            skip: 건너뛸 개수
+            limit: 조회할 최대 개수
+
+        Returns:
+            UserChatHistory: 세션 목록과 각 세션별 메시지
+        """
+        # 1. Redis 캐시 확인
+        if self.chat_cache_service:
+            cached_data = await self.chat_cache_service.get_chat_history(user_id)
+            if cached_data:
+                # 캐시 히트
+                return self._deserialize_history(cached_data)
+
+        # 2. MySQL에서 조회
+        sessions = await self.chat_session_repository.find_by_user_id(user_id, skip, limit)
+
+        # 3. 각 세션의 메시지 조회
+        messages_by_session = {}
+        for session in sessions:
+            messages = await self.chat_message_repository.find_by_session_id(
+                session.session_id,
+                skip=0,
+                limit=100  # 세션당 최대 100개 메시지
+            )
+            messages_by_session[session.session_id] = messages
+
+        history = UserChatHistory(
+            sessions=sessions,
+            messages_by_session=messages_by_session
+        )
+
+        # 4. Redis에 캐싱
+        if self.chat_cache_service:
+            serialized = self._serialize_history(history)
+            await self.chat_cache_service.set_chat_history(user_id, serialized)
+
+        return history
+
+    def _serialize_history(self, history: UserChatHistory) -> List[Dict[str, Any]]:
+        """UserChatHistory를 직렬화"""
+        result = []
+        for session in history.sessions:
+            messages = history.messages_by_session.get(session.session_id, [])
+            result.append({
+                "session": asdict(session),
+                "messages": [asdict(msg) for msg in messages]
+            })
+        return result
+
+    def _deserialize_history(self, data: List[Dict[str, Any]]) -> UserChatHistory:
+        """직렬화된 데이터를 UserChatHistory로 변환"""
+        sessions = []
+        messages_by_session = {}
+
+        for item in data:
+            session_data = item["session"]
+            session = ChatSession(**session_data)
+            sessions.append(session)
+
+            messages_data = item["messages"]
+            messages = [ChatMessage(**msg_data) for msg_data in messages_data]
+            messages_by_session[session.session_id] = messages
+
+        return UserChatHistory(
+            sessions=sessions,
+            messages_by_session=messages_by_session
+        )
 
     async def get_chat_statistics(self) -> dict:
         """채팅 통계"""

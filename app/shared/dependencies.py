@@ -38,6 +38,9 @@ from app.search.infrastructure.repositories.elasticsearch_vector_store_repositor
 )
 from app.shared.services.mlflow_tracker import StandardMLflowTracker
 from app.auth.application.services.token_service import TokenService
+from app.ocr.application.ocr_service import OCRService
+from app.ocr.application.text_analysis_service import TextAnalysisService
+from app.chat.application.services.chat_cache_service import ChatCacheService
 from redis.asyncio import Redis
 
 
@@ -101,6 +104,32 @@ def get_token_service():
         redis_client=get_redis_client(),
         access_ttl_seconds=settings.access_token_ttl_seconds,
         refresh_ttl_seconds=settings.refresh_token_ttl_seconds
+    )
+
+
+def get_text_analysis_service(
+    search_use_cases=Depends(get_search_use_cases)
+):
+    """텍스트 분석 서비스 의존성 (지식베이스 연동)"""
+    return TextAnalysisService(
+        api_key=settings.openai_api_key,
+        search_use_cases=search_use_cases
+    )
+
+
+def get_ocr_service(
+    text_analysis_service=Depends(get_text_analysis_service)
+):
+    """OCR 서비스 의존성"""
+    return OCRService(text_analysis_service=text_analysis_service)
+
+
+@lru_cache()
+def get_chat_cache_service():
+    """채팅 캐시 서비스 의존성"""
+    return ChatCacheService(
+        redis_client=get_redis_client(),
+        cache_ttl=3600  # 1시간 캐시
     )
 
 
@@ -197,13 +226,15 @@ def get_chat_use_cases(
     chat_message_repository=Depends(get_chat_message_repository),
     rag_pipeline=Depends(get_rag_pipeline),
     mlflow_tracker=Depends(get_mlflow_tracker),
+    chat_cache_service=Depends(get_chat_cache_service)
 ):
-    """채팅 유스케이스 의존성"""
+    """채팅 유스케이스 의존성 (Redis 캐시 포함)"""
     return ChatUseCases(
         chat_session_repository=chat_session_repository,
         chat_message_repository=chat_message_repository,
         rag_pipeline=rag_pipeline,
         mlflow_tracker=mlflow_tracker,
+        chat_cache_service=chat_cache_service
     )
 
 

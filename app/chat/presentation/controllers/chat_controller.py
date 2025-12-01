@@ -8,6 +8,8 @@ from app.chat.presentation.schemas.chat_schemas import (
     ChatMessageSchema,
     ChatRequest,
     ChatResponse,
+    ChatSessionSchema,
+    ChatHistoryResponse,
     LawReferenceSchema,
 )
 from app.db.database import get_db
@@ -125,6 +127,46 @@ class ChatController:
                     raise HTTPException(status_code=404, detail="세션을 찾을 수 없습니다.")
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"세션 삭제 중 오류: {str(e)}")
+
+        @self.router.get("/history/user/{user_id}", response_model=ChatHistoryResponse)
+        async def get_user_chat_history(
+            user_id: int,
+            skip: int = 0,
+            limit: int = 100,
+            chat_use_cases: ChatUseCases = Depends(get_chat_use_cases)
+        ):
+            """사용자 채팅 히스토리 조회 (Redis 캐시 + MySQL)"""
+            try:
+                history = await chat_use_cases.get_user_chat_history(user_id, skip, limit)
+
+                # 프론트 형식에 맞게 변환
+                chats = []
+                for session in history.sessions:
+                    messages = history.messages_by_session.get(session.session_id, [])
+                    chats.append(
+                        ChatSessionSchema(
+                            id=session.session_id,
+                            title=session.title or "새로운 상담",
+                            messages=[
+                                ChatMessageSchema(
+                                    id=str(msg.id) if msg.id else str(idx),
+                                    role=msg.role.value,
+                                    content=msg.content
+                                )
+                                for idx, msg in enumerate(messages)
+                            ],
+                            created_at=session.created_at,
+                            updated_at=session.updated_at
+                        )
+                    )
+
+                return ChatHistoryResponse(
+                    chats=chats,
+                    total=len(chats)
+                )
+
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"사용자 히스토리 조회 중 오류: {str(e)}")
 
         @self.router.get("/statistics")
         async def get_chat_statistics(

@@ -8,6 +8,8 @@ import uuid
 class ChatSession:
     """채팅 세션 도메인 엔티티"""
     session_id: str
+    user_id: Optional[int] = None
+    title: Optional[str] = None
     id: Optional[int] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
@@ -19,10 +21,12 @@ class ChatSession:
             self.metadata = {}
 
     @classmethod
-    def create_new(cls, metadata: Dict[str, Any] = None) -> "ChatSession":
+    def create_new(cls, user_id: int = None, title: str = None, metadata: Dict[str, Any] = None) -> "ChatSession":
         """새로운 채팅 세션 생성"""
         return cls(
             session_id=str(uuid.uuid4()),
+            user_id=user_id,
+            title=title or "새로운 상담",
             created_at=datetime.now(),
             metadata=metadata or {}
         )
