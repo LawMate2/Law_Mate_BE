@@ -1,6 +1,6 @@
 from dataclasses import asdict
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 
 from app.chat.application.use_cases.chat_use_cases import ChatUseCases
@@ -8,6 +8,8 @@ from app.chat.presentation.schemas.chat_schemas import (
     ChatMessageSchema,
     ChatRequest,
     ChatResponse,
+    ChatSessionSchema,
+    ChatHistoryResponse,
     LawReferenceSchema,
 )
 from app.db.database import get_db
@@ -126,6 +128,46 @@ class ChatController:
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"세션 삭제 중 오류: {str(e)}")
 
+        @self.router.get("/history/user/{user_id}", response_model=ChatHistoryResponse)
+        async def get_user_chat_history(
+            user_id: int,
+            skip: int = 0,
+            limit: int = 100,
+            chat_use_cases: ChatUseCases = Depends(get_chat_use_cases)
+        ):
+            """사용자 채팅 히스토리 조회 (Redis 캐시 + MySQL)"""
+            try:
+                history = await chat_use_cases.get_user_chat_history(user_id, skip, limit)
+
+                # 프론트 형식에 맞게 변환
+                chats = []
+                for session in history.sessions:
+                    messages = history.messages_by_session.get(session.session_id, [])
+                    chats.append(
+                        ChatSessionSchema(
+                            id=session.session_id,
+                            title=session.title or "새로운 상담",
+                            messages=[
+                                ChatMessageSchema(
+                                    id=str(msg.id) if msg.id else str(idx),
+                                    role=msg.role.value,
+                                    content=msg.content
+                                )
+                                for idx, msg in enumerate(messages)
+                            ],
+                            created_at=session.created_at,
+                            updated_at=session.updated_at
+                        )
+                    )
+
+                return ChatHistoryResponse(
+                    chats=chats,
+                    total=len(chats)
+                )
+
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"사용자 히스토리 조회 중 오류: {str(e)}")
+
         @self.router.get("/statistics")
         async def get_chat_statistics(
             chat_use_cases: ChatUseCases = Depends(get_chat_use_cases)
@@ -135,3 +177,43 @@ class ChatController:
                 return await chat_use_cases.get_chat_statistics()
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"통계 조회 중 오류: {str(e)}")
+
+        @self.router.websocket("/ws")
+        async def chat_stream(
+            websocket: WebSocket,
+            chat_use_cases: ChatUseCases = Depends(get_chat_use_cases)
+        ):
+            """웹소켓 기반 스트리밍 채팅"""
+            await websocket.accept()
+            try:
+                while True:
+                    payload = await websocket.receive_json()
+                    message = payload.get("message")
+                    session_id = payload.get("session_id")
+                    conversation_history = payload.get("conversation_history") or []
+
+                    if not message:
+                        await websocket.send_json({"event": "error", "detail": "message가 필요합니다."})
+                        continue
+
+                    async def send_token(token: str):
+                        await websocket.send_json({"event": "token", "token": token})
+
+                    try:
+                        result = await chat_use_cases.stream_message(
+                            session_id=session_id or "",
+                            user_message=message,
+                            conversation_history=conversation_history,
+                            token_callback=send_token
+                        )
+                        await websocket.send_json({
+                            "event": "done",
+                            "session_id": result.session_id or session_id or "",
+                            "response": result.response,
+                            "related_laws": [asdict(law) for law in result.related_laws],
+                            "law_context": result.law_context
+                        })
+                    except Exception as exc:
+                        await websocket.send_json({"event": "error", "detail": str(exc)})
+            except WebSocketDisconnect:
+                return

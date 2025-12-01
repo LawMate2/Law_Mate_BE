@@ -33,6 +33,11 @@ class UserRepository(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    async def find_by_access_token(self, access_token: str) -> Optional[User]:
+        """액세스 토큰으로 회원 조회"""
+        raise NotImplementedError
+
+    @abstractmethod
     async def delete(self, user_id: int) -> bool:
         """회원 삭제"""
         raise NotImplementedError

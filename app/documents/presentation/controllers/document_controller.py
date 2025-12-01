@@ -1,7 +1,8 @@
 import os
 import shutil
+import asyncio
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, BackgroundTasks
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -24,6 +25,7 @@ class DocumentController:
         @self.router.post("/upload", response_model=DocumentResponse)
         async def upload_document(
             file: UploadFile = File(...),
+            background_tasks: BackgroundTasks = None,
             document_use_cases: DocumentUseCases = Depends(get_document_use_cases),
             db: Session = Depends(get_db)
         ):
@@ -50,17 +52,47 @@ class DocumentController:
                 # 파일 정보 가져오기
                 file_size = os.path.getsize(file_path)
 
-                # 문서 업로드 처리
-                document = await document_use_cases.upload_document(
+                # 문서 메타 저장 (처리 비동기)
+                document = await document_use_cases.create_pending_document(
                     filename=file.filename,
                     file_path=file_path,
                     file_size=file_size,
                     file_type=file_extension
                 )
 
+                # 백그라운드에서 처리 파이프라인 실행
+                async def process_async(doc_id: int):
+                    # 새 세션/의존성으로 안전하게 처리
+                    from app.db.database import SessionLocal
+                    from app.documents.infrastructure.repositories.sqlalchemy_document_repository import SqlAlchemyDocumentRepository
+                    from app.shared.dependencies import (
+                        get_document_processor,
+                        get_vector_store_repository,
+                        get_mlflow_tracker,
+                        get_elasticsearch_repository
+                    )
+                    db_session = SessionLocal()
+                    try:
+                        use_cases = DocumentUseCases(
+                            document_repository=SqlAlchemyDocumentRepository(db_session),
+                            vector_store_repository=get_vector_store_repository(),
+                            document_processor=get_document_processor(),
+                            mlflow_tracker=get_mlflow_tracker(),
+                            elasticsearch_repository=get_elasticsearch_repository()
+                        )
+                        await use_cases.process_document_by_id(doc_id)
+                    finally:
+                        db_session.close()
+
+                # BackgroundTasks가 없을 경우를 대비해 asyncio.create_task로 처리
+                if background_tasks is not None:
+                    background_tasks.add_task(process_async, document.id)
+                else:
+                    asyncio.create_task(process_async(document.id))
+
                 return DocumentResponse(
                     success=True,
-                    message="문서가 성공적으로 업로드되고 처리되었습니다.",
+                    message="문서 업로드가 접수되었습니다. 비동기 처리 중입니다.",
                     document_id=str(document.id)
                 )
 

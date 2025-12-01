@@ -19,6 +19,8 @@ class SqlAlchemyChatSessionRepository(ChatSessionRepository):
             # 새 세션 생성
             db_session = ChatSessionModel(
                 session_id=session.session_id,
+                user_id=session.user_id,
+                title=session.title,
                 created_at=session.created_at,
                 updated_at=session.updated_at,
                 total_messages=session.total_messages,
@@ -34,6 +36,8 @@ class SqlAlchemyChatSessionRepository(ChatSessionRepository):
                 ChatSessionModel.id == session.id
             ).first()
             if db_session:
+                db_session.user_id = session.user_id
+                db_session.title = session.title
                 db_session.updated_at = session.updated_at
                 db_session.total_messages = session.total_messages
                 db_session.metadata_json = session.metadata
@@ -92,11 +96,25 @@ class SqlAlchemyChatSessionRepository(ChatSessionRepository):
             db_session.total_messages = message_count
             self.db.commit()
 
+    async def find_by_user_id(self, user_id: int, skip: int = 0, limit: int = 100) -> List[ChatSession]:
+        """사용자 ID로 세션 목록 조회 (최신순)"""
+        db_sessions = (
+            self.db.query(ChatSessionModel)
+            .filter(ChatSessionModel.user_id == user_id)
+            .order_by(ChatSessionModel.updated_at.desc())
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
+        return [self._to_domain_entity(session) for session in db_sessions]
+
     def _to_domain_entity(self, db_session: ChatSessionModel) -> ChatSession:
         """DB 모델을 도메인 엔티티로 변환"""
         return ChatSession(
             id=db_session.id,
             session_id=db_session.session_id,
+            user_id=db_session.user_id,
+            title=db_session.title,
             created_at=db_session.created_at,
             updated_at=db_session.updated_at,
             total_messages=db_session.total_messages,

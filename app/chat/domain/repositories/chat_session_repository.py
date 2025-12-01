@@ -40,3 +40,8 @@ class ChatSessionRepository(ABC):
     async def update_message_count(self, session_id: str, message_count: int):
         """메시지 수 업데이트"""
         pass
+
+    @abstractmethod
+    async def find_by_user_id(self, user_id: int, skip: int = 0, limit: int = 100) -> List[ChatSession]:
+        """사용자 ID로 세션 목록 조회"""
+        pass
