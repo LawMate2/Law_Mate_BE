@@ -1,202 +1,136 @@
 # DDD RAG Chatbot Server
 
-FastAPI-based retrieval-augmented generation (RAG) service implemented with a Domain-Driven Design (DDD) layered architecture for managing documents, chat sessions, and observability around LLM-assisted conversations.
+![Python](https://img.shields.io/badge/python-3.11-3776AB?logo=python&logoColor=white) ![FastAPI](https://img.shields.io/badge/FastAPI-async-green?logo=fastapi&logoColor=white) ![LangGraph](https://img.shields.io/badge/LangGraph-RAG-blueviolet) ![Docker Compose](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white) ![MLflow](https://img.shields.io/badge/MLflow-metrics-orange)
 
-## Key Capabilities
+도메인 주도 설계(DDD)로 구성된 LangGraph 기반 RAG 서버입니다. 사내 문서, 외부 법령, OCR 이미지까지 한 번에 검색·요약·답변하며, MLflow로 전 과정을 추적합니다.
 
-- Clean separation of presentation, application, domain, and infrastructure layers.
-- Document ingestion pipeline using LangChain loaders and chunking, FAISS vector storage, and Claude embeddings (Anthropic).
-- LangGraph-powered retrieval-augmented chat orchestration with persistent session history.
-- Retrieval-augmented chat interactions backed by OpenAI ChatGPT (response) + Claude embeddings (retrieval).
-- Google OAuth login flow with SQLAlchemy persistence for user profiles.
-- MLflow tracking of document processing and chat metrics for experiment management.
-- Korean Parliamentary Law portal integration that surfaces related legislation for each chat query.
+## 한눈에 보기
+- Layered DDD: `presentation → application → domain → infrastructure`로 관심사 분리
+- LangGraph RAG: 벡터 검색(FAISS/Elasticsearch) + 법령 검색을 결합해 답변 생성
+- 데이터 파이프라인: PDF/DOCX/TXT 업로드 → LangChain 청크 분할 → OpenAI 임베딩 저장
+- 운영 도구: MLflow, Redis 캐시, Kibana/Elasticsearch 스택, Docker Compose 일체형
+- OCR 지원: CLOVA OCR로 텍스트 추출 후 OpenAI(`gpt-4o-mini`)로 리포트/QA 생성
 
-## Tech Stack
-
-- FastAPI, Pydantic, and Uvicorn
-- SQLAlchemy ORM with MySQL (Docker) backend
-- LangGraph, LangChain, FAISS, Anthropic Claude embeddings, and OpenAI Chat API
-- MLflow for experiment tracking
-- httpx for Google OAuth user infoY
-- Python 3.11
-
-## Architecture at a Glance
-
-```text
-[Client]
-   |
-[Presentation]  FastAPI routers (chat, documents, auth)
-   |
-[Application]   Use cases orchestrating services and repositories
-   |
-[Domain]        Entities, value objects, repository contracts
-   |
-[Infrastructure]SQLAlchemy + FAISS implementations, OpenAI, MLflow adapters
-   |
-[External]      MySQL, FAISS index on disk, OpenAI API, Google OAuth, MLflow
+## 아키텍처 지도
+```mermaid
+graph LR
+    Client["웹/모바일/툴링 클라이언트"] -->|REST| FastAPI[(Presentation<br/>Routers & Schemas)]
+    subgraph Application
+        UC[UseCases<br/>Chat/Document/Search/Auth/OCR] -->|LLM 요청| LLM[LLM Service<br/>OpenAI Chat]
+        UC -->|검색| RAG[LangGraph RAG Pipeline]
+        UC -->|추적| ML[MLflow Tracker]
+    end
+    subgraph Domain
+        Entities[Entities & Value Objects]
+        Repos[Repository Interfaces]
+    end
+    subgraph Infra[Infrastructure]
+        SQL[(MySQL + SQLAlchemy)]
+        VS[(FAISS Index<br/>+ optional Elasticsearch)]
+        OCR[CLOVA OCR]
+        Cache[(Redis)]
+    end
+    FastAPI --> UC
+    UC --> Domain
+    UC --> SQL
+    UC --> VS
+    UC --> OCR
+    UC --> Cache
 ```
 
-## Repository Layout
+### 데이터 플로우
+```mermaid
+sequenceDiagram
+    participant User as 사용자
+    participant API as FastAPI
+    participant Doc as Document UseCases
+    participant VC as Vector Store
+    participant ML as MLflow
 
-```text
+    User->>API: 문서 업로드 (PDF/DOCX/TXT)
+    API->>Doc: 메타 저장 & 상태=PROCESSING
+    Doc->>Doc: LangChain 청크 분할 (1000/200)
+    Doc->>VC: OpenAI 임베딩 생성 후 FAISS/ES 저장
+    Doc->>ML: 청크 수·처리시간 로그
+    Doc-->>User: 완료/실패 상태 반환
+```
+
+```mermaid
+flowchart LR
+    Q["질문 + 대화내역"] --> R["RAG 검색 (FAISS/ES)"]
+    R --> L["법령 검색 서비스"]
+    L --> C["컨텍스트 결합"]
+    C --> G["LLM 생성 (OpenAI)"]
+    G --> Ans["최종 답변 + 관련 법령 목록"]
+```
+
+## 폴더 맵
+```
 .
-├── main.py
+├── main.py                     # FastAPI 부트스트랩 & 라우팅 등록
 ├── app/
-│   ├── presentation/
-│   │   ├── controllers/      # FastAPI routers
-│   │   └── schemas/          # Request/response DTOs
-│   ├── application/          # Use cases and services (LLM, document processor)
-│   ├── domain/               # Entities, value objects, repository interfaces
-│   ├── infrastructure/       # SQLAlchemy + FAISS implementations
-│   └── db/                   # SQLAlchemy models and session helpers
-├── data/                     # FAISS index, uploads, MLflow runs
-├── docker/                   # Docker Compose and MySQL assets
-├── docker-data/              # Persisted MySQL volume (gitignored)
-├── requirements.txt
-└── test_main.http            # HTTPie/VSCode request samples
+│   ├── chat/                   # LangGraph RAG, 세션/메시지 관리
+│   ├── documents/              # 업로드, 청크 분할, 벡터 적재
+│   ├── search/                 # FAISS + (옵션) Elasticsearch 검색
+│   ├── auth/                   # Google OAuth, 사용자 관리
+│   ├── ocr/                    # CLOVA OCR + AI 분석
+│   ├── db/                     # SQLAlchemy 모델/세션
+│   ├── core/config.py          # 환경설정 (.env)
+│   └── shared/                 # MLflow, 캐시, DI 헬퍼
+├── docker/docker-compose.yaml  # MySQL + Elasticsearch + Redis + Kibana + App
+├── data/                       # FAISS/업로드/MLflow 기본 경로
+└── docs/AUTH_GUIDE.md          # OAuth 연동 가이드
 ```
 
-## Prerequisites
-
-- Python 3.11 and `pip`
-- Docker 20+ with Docker Compose v2
-- An Anthropic API key with access to `text-embedding-001` (used for FAISS ingestion and retrieval)
-- An OpenAI API key with access to `gpt-3.5-turbo` (used for generation)
-- Optional: MLflow CLI for inspecting runs (`pip install mlflow`)
-
-## Environment Configuration
-
-Create a `.env` file at the repository root with the variables below (defaults come from `app/core/config.py`):
-
-| Key | Default | Description |
-| --- | --- | --- |
-| `OPENAI_API_KEY` | (required) | OpenAI API key used for chat completions |
-| `ANTHROPIC_API_KEY` | (required) | Anthropic API key used for all document/query embeddings |
-| `CLAUDE_EMBEDDING_MODEL` | `text-embedding-001` | Embedding model passed to Anthropic |
-| `CLAUDE_EMBEDDING_DIMENSION` | `1536` | Expected embedding vector dimension for the FAISS index |
-| `FAISS_DB_PATH` | `./data/faiss` | Directory where the FAISS index and metadata are persisted |
-| `UPLOAD_DIR` | `./data/uploads` | Directory for storing original uploaded documents |
-| `MLFLOW_TRACKING_URI` | `./data/mlruns` | Path or URI for MLflow tracking storage |
-| `MLFLOW_EXPERIMENT_NAME` | `rag-chatbot` | MLflow experiment name created on startup |
-| `DB_DRIVER` | `mysql+pymysql` | SQLAlchemy database driver string |
-| `DB_HOST` | `127.0.0.1` | MySQL host (matches the Docker Compose service) |
-| `DB_PORT` | `3306` | MySQL port |
-| `DB_USERNAME` | `appuser` | Database username |
-| `DB_PASSWORD` | `apppw` | Database password |
-| `DB_DATABASE` | `appdb` | Database name |
-| `ASSEMBLY_API_KEY` | (optional) | 의회·법률정보 포털 Open API 키 |
-| `ASSEMBLY_API_URL` | (optional) | 의회·법률정보 포털 검색 엔드포인트 URL |
-| `ASSEMBLY_API_QUERY_PARAM` | `search` | 질문을 전달할 쿼리 파라미터 이름 |
-| `ASSEMBLY_API_TIMEOUT` | `10.0` | 법령 API 호출 타임아웃(초) |
-
-> Note: the Google OAuth flow expects a valid access token issued by Google; no configuration is stored in this service.
-
-## Setup
-
-1. Install Python dependencies:
-
-   ```bash
-   python -m venv .venv
-   source .venv/bin/activate
-   pip install --upgrade pip
-   pip install -r requirements.txt
-   ```
-
-2. Start MySQL using Docker (from the repository root):
-
-   ```bash
-   docker compose -f docker/docker-compose.yaml up -d
-   docker compose -f docker/docker-compose.yaml logs -f mysql
-   ```
-
-   The database stores its data under `docker/docker-data/mysql`.
-
-3. Launch the FastAPI server:
-
-   ```bash
-   uvicorn main:app --reload
-   ```
-
-   The API will be available at `http://localhost:8000` with interactive docs at `/docs` and `/redoc`. Database tables are created automatically during startup.
-
-4. (Optional) Open the MLflow UI in another terminal to inspect logged metrics:
-
-   ```bash
-   mlflow ui --backend-store-uri data/mlruns
-   ```
-
-### Data Directories
-
-- `data/uploads`: original files uploaded through the API
-- `data/faiss`: FAISS index (`faiss_index.bin`) and chunk metadata (`metadata.json`)
-- `data/mlruns`: MLflow tracking data
-- `docker/docker-data/mysql`: persistent MySQL volume managed by Docker
-
-## Using the API
-
-### Upload a document
-
+## 빠른 시작
 ```bash
-curl -X POST http://localhost:8000/documents/upload \
-  -F "file=@/path/to/sample.pdf"
+python -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
+
+docker compose -f docker/docker-compose.yaml up -d   # MySQL/ES/Redis/Kibana
+uvicorn main:app --reload                             # http://localhost:8000
 ```
 
-### Ask a question with retrieval-augmented chat
+MLflow UI를 보고 싶다면 별도 터미널에서 `mlflow ui --backend-store-uri data/mlruns` 실행.
 
-```bash
-curl -X POST http://localhost:8000/chat \
-  -H "Content-Type: application/json" \
-  -d '{
-        "message": "Summarise the onboarding policy.",
-        "session_id": null,
-        "conversation_history": []
-      }'
-```
-
-Reuse the returned `session_id` for follow-up questions to preserve context.
-
-If `ASSEMBLY_API_*` 환경 변수를 설정하면 같은 응답에 `related_laws`(질문과 연관된 법령 목록)와 `law_context`(LangGraph로 정리한 요약)가 추가로 포함됩니다. 이를 통해 LangGraph + RAG 파이프라인이 사내 문서 컨텍스트와 외부 의회·법률정보를 동시에 반영하도록 구성했습니다.
-
-### Inspect sample requests
-
-The `test_main.http` file contains ready-to-run HTTP requests for VS Code or the REST Client extension.
-
-## API Surface
-
-| Method | Path | Description |
+## 필수/주요 환경 변수
+| Key | 기본값 | 설명 |
 | --- | --- | --- |
-| GET | `/` | Service metadata and advertised features |
-| GET | `/health` | Liveness probe |
-| GET | `/architecture` | Current DDD layer summary |
-| POST | `/documents/upload` | Upload and process a document (PDF, TXT, DOCX) |
-| GET | `/documents` | List stored documents with processing status |
-| GET | `/documents/{document_id}` | Retrieve document metadata |
-| DELETE | `/documents/{document_id}` | Remove a document, its vectors, and file |
-| GET | `/documents/statistics/overview` | Aggregate document ingestion metrics |
-| POST | `/chat` | Send a message and receive a RAG answer |
-| GET | `/chat/sessions` | List chat sessions |
-| GET | `/chat/sessions/{session_id}/history` | Retrieve chat history for a session |
-| DELETE | `/chat/sessions/{session_id}` | Remove a chat session and its messages |
-| GET | `/chat/statistics` | Aggregate chat performance metrics |
-| POST | `/auth/google` | Sign in with a Google OAuth access token |
-| GET | `/auth/users` | List users stored in the system |
-| GET | `/auth/users/{user_id}` | Fetch user details |
-| DELETE | `/auth/users/{user_id}` | Delete a user |
+| `OPENAI_API_KEY` | (필수) | Chat/RAG/OCR 분석에 사용 |
+| `ANTHROPIC_API_KEY` | "" | 필요 시 Claude 임베딩 대체용 |
+| `CLAUDE_EMBEDDING_MODEL` | `text-embedding-001` | Claude 사용 시 모델명 |
+| `FAISS_DB_PATH` | `./data/faiss` | FAISS 인덱스/메타 저장 경로 |
+| `UPLOAD_DIR` | `./data/uploads` | 원본 업로드 파일 저장 경로 |
+| `MLFLOW_TRACKING_URI` | `./data/mlruns` | MLflow 스토리지 |
+| `DB_HOST` | `127.0.0.1` (도커는 `mysql`) | MySQL 호스트 |
+| `DB_PORT` | `3306` | MySQL 포트 |
+| `DB_USERNAME` / `DB_PASSWORD` | `appuser` / `apppw` | MySQL 계정 |
+| `ELASTICSEARCH_HOST` / `PORT` | `127.0.0.1` / `9200` | ES 검색 사용 시 |
+| `CLOVA_OCR_API_URL` / `CLOVA_OCR_SECRET_KEY` | "" | CLOVA OCR 호출 정보 |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | "" | OAuth 로그인 |
+| `ASSEMBLY_API_KEY` | (선택) | 의회·법률정보 포털 |
 
-## Observability and Metrics
+## API 하이라이트
+- `POST /documents/upload` : PDF/DOCX/TXT 업로드 → 청크 → 벡터 적재
+- `GET /documents` / `GET /documents/{id}` / `DELETE /documents/{id}`
+- `POST /chat` : LangGraph RAG 답변 + 관련 법령 + 세션 히스토리
+- `GET /chat/sessions` / `GET /chat/sessions/{id}/history` / `DELETE ...`
+- `POST /ocr/extract` : 이미지/PDF → 텍스트 추출 (CLOVA)
+- `POST /ocr/analyze` : 추출 텍스트를 `gpt-4o-mini`로 요약·QA·주의사항 생성
+- `POST /auth/google` : 액세스 토큰 기반 로그인, `/auth/users` CRUD
+- 참고: `test_main.http`에 VS Code REST Client용 샘플 요청이 포함되어 있습니다.
 
-- Each document ingestion run logs metadata, chunk counts, and processing durations to MLflow.
-- Chat interactions record retrieval, generation, and total latency along with similarity scores.
-- SQLAlchemy emits SQL statements via `echo=True` in `app/db/database.py`; adjust if quieter logs are required.
+## 운영 & 관측
+- MLflow: 업로드/채팅의 청크 수, 처리 시간, 검색/생성 지연을 로그
+- Elasticsearch + Kibana: (옵션) 텍스트 검색/대시보드
+- Redis: 토큰/세션 캐시 및 잠재적 큐잉 용도
+- 데이터 경로: `data/uploads`(원본), `data/faiss`(인덱스+메타), `data/mlruns`(실험)
 
-## Troubleshooting
+## 개발 팁
+- DDD 레이어 유지: `presentation`에서는 DTO 검증/라우팅만, 비즈니스 규칙은 `application/domain`에 위치
+- 새 통합(예: 다른 OCR/LLM) 시 `infrastructure` 어댑터만 교체하면 상위 레이어 영향 최소화
+- OAuth 세부 설정은 `docs/AUTH_GUIDE.md` 참고
 
-- **Database connection errors**: confirm the MySQL container is running and the `.env` connection variables match the Compose service.
-- **Qwen embedding failures**: verify `QWEN_API_KEY`/`QWEN_EMBEDDING_MODEL` are set and that the DashScope endpoint is reachable from the host.
-- **OpenAI API failures**: verify `OPENAI_API_KEY` is set and the host can reach the OpenAI API. Rate limits are logged under `data/mlruns`.
-- **FAISS index missing**: the server initialises the index on first run. Ensure the process has write access to `data/faiss`.
-
----
-
-This README reflects the current project structure (`main.py` startup hooks call `create_tables()`), so rerun the application after changing dependencies or configuration files.
+즐겁게 해킹하세요! 🚀
