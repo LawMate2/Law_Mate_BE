@@ -100,10 +100,16 @@ class LangGraphRAGPipeline:
             state.get("context", ""), state.get("law_context", "")
         )
         has_any_context = bool(combined_context.strip())
+        query_text = state.get("query", "") or ""
 
         # 검색/법령 둘 다 없으면 LLM 호출을 건너뛰고 안전한 응답 제공
         if not has_any_context:
-            fallback = "해당 법률 자료가 아직 준비 중입니다. 곧 추가 후 답변을 제공하겠습니다."
+            lower_q = query_text.lower()
+            greetings = ["안녕", "안녕하세요", "hello", "hi", "하이"]
+            if any(greet in lower_q for greet in greetings) or len(query_text.strip()) <= 6:
+                fallback = "안녕하세요! 무엇을 도와드릴까요? 법률 관련 상담이 필요하면 편하게 말씀해주세요."
+            else:
+                fallback = "해당 법률 자료가 아직 준비 중입니다. 곧 추가 후 답변을 제공하겠습니다."
             return {
                 "response": fallback,
                 "combined_context": "",

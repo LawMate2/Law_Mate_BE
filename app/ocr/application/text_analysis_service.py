@@ -28,26 +28,25 @@ class TextAnalysisService:
             # 전체 텍스트가 너무 길 수 있으므로 요약해서 검색
             search_query = text[:500]  # 처음 500자만 사용
 
-            results = await self.search_use_cases.search(
-                query=search_query,
-                top_k=3  # 상위 3개 결과만 사용
-            )
-
-            if results and len(results) > 0:
-                return [
-                    {
-                        "content": result.get("content", ""),
-                        "metadata": result.get("metadata", {})
-                    }
-                    for result in results
+            # SearchUseCases는 search_documents를 제공하므로 이를 사용
+            if hasattr(self.search_use_cases, "search_documents"):
+                search_result = await self.search_use_cases.search_documents(search_query)
+                results = [
+                    {"content": ctx, "metadata": {}}
+                    for ctx in search_result.contexts
                 ]
+            else:
+                return None
+
+            if results:
+                return results
             return None
 
         except Exception as e:
             print(f"지식베이스 검색 중 오류 (무시하고 계속): {e}")
             return None
 
-    async def analyze_text(self, text: str) -> Dict[str, Any]:
+    async def analyze_text(self, text: str, questions: Optional[List[str]] = None) -> Dict[str, Any]:
         """
         OCR로 추출된 텍스트를 분석하여 주의사항과 권장사항을 제공
         지식베이스가 있으면 관련 법률 정보를 참고하여 분석
@@ -59,16 +58,19 @@ class TextAnalysisService:
             Dict: 분석 결과 (요약, 문서 유형, 주의사항, 권장사항)
         """
 
-        # 1. 지식베이스에서 관련 정보 검색
+        questions = questions or []
+
+        # 1. 지식베이스에서 관련 정보 검색 (없어도 진행)
         knowledge_base_results = await self._search_knowledge_base(text)
 
         # 2. 시스템 프롬프트 구성
         system_prompt = """당신은 법률 문서 분석 전문가입니다.
 OCR로 추출된 텍스트를 분석하여 다음을 제공하세요:
-1. 문서 요약
+1. 문서 요약 (계약서라면 계약 핵심 요지, 당사자/금액/기간/의무/위약 등)
 2. 문서 유형 판단
 3. 주의해야 할 핵심 포인트 (제목, 설명, 중요도)
 4. 권장사항
+5. 질문-답변: 제공된 질문이 있다면, 추측 없이 텍스트 범위 내에서 근거를 들어 답변하고, 근거가 없으면 부족함을 명시하세요.
 
 반드시 JSON 형식으로만 응답하세요."""
 
@@ -82,9 +84,9 @@ OCR로 추출된 텍스트를 분석하여 다음을 제공하세요:
                 user_prompt_parts.append(kb_result["content"][:1000])  # 각 결과당 최대 1000자
             user_prompt_parts.append("\n---\n")
 
-        user_prompt_parts.append(f"""### 분석할 문서 텍스트:
+        user_prompt_parts.append("""### 분석할 문서 텍스트:
 
-{text}
+{doc_text}
 
 ---
 
@@ -102,13 +104,21 @@ OCR로 추출된 텍스트를 분석하여 다음을 제공하세요:
     "recommendations": [
         "권장사항 1 (참고자료 기반)",
         "권장사항 2"
+    ],
+    "qa": [
+        {{"question": "질문1", "answer": "텍스트 근거 기반 답변"}},
+        {{"question": "질문2", "answer": "텍스트 근거 기반 답변"}}
     ]
-}}""")
+}}""".format(doc_text=text))
 
         user_prompt = "\n".join(user_prompt_parts)
 
         # 4. AI 분석 수행
         try:
+            qa_block = "\n".join([f"- {q}" for q in questions]) if questions else ""
+            if qa_block:
+                user_prompt += f"\n\n### 추가 질문 목록:\n{qa_block}\n"
+
             response = await self.client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[

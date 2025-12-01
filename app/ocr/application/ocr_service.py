@@ -25,7 +25,7 @@ class OCRService:
             "provider": "CLOVA"
         }
 
-    async def analyze_text(self, text: str) -> Dict[str, Any]:
+    async def analyze_text(self, text: str, questions=None) -> Dict[str, Any]:
         """
         OCR 텍스트를 AI로 분석하여 주의사항 제공
 
@@ -38,4 +38,4 @@ class OCRService:
         if not self.text_analysis_service:
             raise ValueError("Text analysis service is not configured")
 
-        return await self.text_analysis_service.analyze_text(text)
+        return await self.text_analysis_service.analyze_text(text, questions=questions or [])

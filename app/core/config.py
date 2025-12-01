@@ -147,6 +147,20 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("USE_ELASTICSEARCH", "USE_ES")
     )
 
+    # MCP 서버 실행 설정
+    mcp_server_cmd: str = Field(
+        default="python -m src.mcp_server",
+        validation_alias=AliasChoices("MCP_SERVER_CMD")
+    )
+    mcp_server_cwd: str = Field(
+        default="../java_2nd_project_mcp",
+        validation_alias=AliasChoices("MCP_SERVER_CWD")
+    )
+    enable_mcp_tools: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("ENABLE_MCP_TOOLS")
+    )
+
     @property
     def database_url(self) -> str:
         return (
