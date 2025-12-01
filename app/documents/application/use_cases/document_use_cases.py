@@ -33,10 +33,23 @@ class DocumentUseCases:
         file_size: int,
         file_type: str
     ) -> Document:
-        """문서 업로드 및 처리"""
-        start_time = time.time()
+        """문서 업로드 및 처리 (동기)"""
+        document = await self.create_pending_document(
+            filename=filename,
+            file_path=file_path,
+            file_size=file_size,
+            file_type=file_type
+        )
+        return await self.process_document(document)
 
-        # 문서 엔티티 생성
+    async def create_pending_document(
+        self,
+        filename: str,
+        file_path: str,
+        file_size: int,
+        file_type: str
+    ) -> Document:
+        """문서 메타만 저장하고 처리 대기 상태로 반환"""
         document = Document(
             filename=filename,
             file_path=file_path,
@@ -45,34 +58,31 @@ class DocumentUseCases:
             status=DocumentStatus.PENDING
         )
 
-        # 파일 형식 검증
         if not document.is_supported_format():
             document.mark_as_failed()
             await self.document_repository.save(document)
             raise ValueError(f"지원하지 않는 파일 형식: {file_type}")
 
-        # 문서를 처리 중 상태로 변경
         document.mark_as_processing()
-        saved_document = await self.document_repository.save(document)
+        return await self.document_repository.save(document)
+
+    async def process_document(self, document: Document) -> Document:
+        """저장된 문서를 실제로 처리"""
+        start_time = time.time()
 
         try:
-            # MLflow 추적 시작
-            run_name = f"upload_document_{filename}"
+            run_name = f"upload_document_{document.filename}"
             with self.mlflow_tracker.start_run(run_name):
-                # 파라미터 로깅
                 await self.mlflow_tracker.log_params({
-                    "filename": filename,
-                    "file_size": file_size,
-                    "file_type": file_type
+                    "filename": document.filename,
+                    "file_size": document.file_size,
+                    "file_type": document.file_type
                 })
 
-                # 문서 처리
-                chunks = await self.document_processor.process_document(file_path)
+                chunks = await self.document_processor.process_document(document.file_path)
 
-                # FAISS 벡터 저장소에 추가
                 success = await self.vector_store_repository.add_documents(chunks)
 
-                # Elasticsearch에도 추가 (활성화된 경우)
                 es_success = True
                 if self.elasticsearch_repository:
                     try:
@@ -85,8 +95,6 @@ class DocumentUseCases:
                 if success:
                     processing_time = time.time() - start_time
                     document.mark_as_completed(len(chunks), processing_time)
-
-                    # 메트릭 로깅
                     await self.mlflow_tracker.log_metrics({
                         "chunk_count": len(chunks),
                         "processing_time": processing_time,
@@ -96,14 +104,25 @@ class DocumentUseCases:
                     document.mark_as_failed()
                     await self.mlflow_tracker.log_metric("success", 0)
 
-                # 문서 상태 업데이트
                 return await self.document_repository.save(document)
-
         except Exception as e:
             document.mark_as_failed()
             await self.document_repository.save(document)
             await self.mlflow_tracker.log_text(str(e), "error.txt")
             raise
+
+    async def process_document_by_id(self, document_id: int) -> Document:
+        """문서 ID로 조회 후 처리"""
+        document = await self.document_repository.find_by_id(document_id)
+        if not document:
+            raise ValueError("문서를 찾을 수 없습니다.")
+
+        if document.status == DocumentStatus.COMPLETED:
+            return document
+
+        document.mark_as_processing()
+        document = await self.document_repository.save(document)
+        return await self.process_document(document)
 
     async def get_document_by_id(self, document_id: int) -> Optional[Document]:
         """문서 ID로 조회"""
